@@ -1,0 +1,98 @@
+import pybedtools 
+from pybedtools import BedTool
+import pandas as pd
+from pybedtools.contrib.bigwig import bedgraph_to_bigwig
+
+def py_bed_random_subset_2_bigwig(bed_files=[], read_number=10000000, species='hg19', subset_filename_suffix='subset'):
+    """
+	#written by peteskene@gmail.com
+    #script takes a list of bed files, randomly subsets each bed file and generates bedgraphs and big wigs
+    #on each subsetted bed file
+    
+    #naming  convention:
+        #supplied bed: *.bed
+    #generated names using default suffix (please note will overwrite existing files, so can change suffix if required:
+        #subsetted bed: *_subset.bed (file is saved for future use to avoid subtle differences from random sampling)
+        #subsetted bedgraph: *_subset.bg
+        #subsetted bigwig: *_subset.bw
+        
+    #will print to screen a table of read number per bed file
+    #will exit if one the input bed files has less than the specified read number (check is made before subsetting, so no files saved)
+        
+    #Parameters:
+    #___________
+    #bed_files: list of bed files as strings (can include path) e.g. ['A.bed', 'B.bed', 'C.bed']
+    #read_number: number of reads to randomly subset; default to 10 million
+    #species: used by bedtools in genomvecov tool; provided as a string (e.g. 'hg19')
+    #subset_filename_suffix: suffix as a string for subsetted bed, bedgraph and bigwig files; eg. include read number 'subset_10M'
+    """
+    
+    if type(bed_files)!=list:
+        return "bed_files needs to be provided as a list: e.g. ['A.bed', 'B.bed', 'C.bed']"
+    for item in bed_files:
+        if type(item)!=str:
+            return "bed_files needs to be provided as a list: e.g. ['A.bed', 'B.bed', 'C.bed']"
+    
+    print 'bed files imported :'
+    print '\n'.join(bed_files)
+    print
+    print 'number of reads to be randomly subsetted: ' + str(read_number)
+    print
+    print 'species set to: ' + species
+    print
+    
+    ######################################
+    #generate subsetted bed file names
+    subset_files = [f.replace('.bed', '_'+ subset_filename_suffix + '.bed') for f in bed_files]
+
+        
+    #dataframe of total read counts
+    DF_total_reads = pd.DataFrame([[item, len(BedTool(item).to_dataframe().index)] for item in bed_files],
+                                  columns=['bed file', 'number of reads'])
+    print DF_total_reads
+    print
+    
+    #check that all bed files have at least read_number
+    if (DF_total_reads['number of reads']<read_number).sum() != 0:
+        print 'Exiting... At least one bed file has less than the specified read number:'
+        print DF_total_reads[DF_total_reads['number of reads']<read_number]
+        return
+    
+    #subset the files, subsetted file will be saved (note not sorted)
+    for i in range(len(bed_files)):
+        print 'bed_file: ' + bed_files[i]
+        print 'subsetted bed file: ' + subset_files[i]
+        print
+        temp = BedTool(bed_files[i]).to_dataframe(dtype=object).sample(n=read_number)
+        temp.to_csv(subset_files[i], sep='\t', header=False, index=False)
+
+    print 'Making bedgraphs and bigwigs on subsetted bed files'
+    
+    def py_bed_to_bgandbw(list_files, chr_sizes=species):
+        #provide list of bed files; e.g. list_files = ['A.bed', 'B.bed']; can include path
+        #bed files do not need to be sorted; script does this
+
+        #make bedgraphs and bigwigs
+        bg_files = [f.replace('bed', 'bg') for f in list_files]
+        bw_files = [f.replace('bed', 'bw') for f in list_files]
+
+        for i in range(len(list_files)):
+    
+            print 'operating on: ' + list_files[i]
+            BedTool(list_files[i]).sort().genome_coverage(bg = True, genome = chr_sizes).moveto(bg_files[i])
+       
+            print 'made bg file: ' + bg_files[i]
+    
+            bedgraph_to_bigwig(BedTool(bg_files[i]), chr_sizes, bw_files[i])
+    
+            print 'made bw file: ' + bw_files[i]
+        print
+        return
+        
+
+    
+    py_bed_to_bgandbw(subset_files)
+
+
+ 
+    return 'Done'
